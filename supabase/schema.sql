@@ -8,8 +8,6 @@ create extension if not exists "uuid-ossp";
 -- ─────────────────────────────────────────────
 -- PROFILES  (extends auth.users)
 -- ─────────────────────────────────────────────
--- NOTE: is_admin() is defined AFTER profiles below (SQL functions
--- validate the referenced table at creation time in PostgreSQL).
 create table if not exists profiles (
   id           uuid primary key references auth.users(id) on delete cascade,
   display_name text,
@@ -31,25 +29,6 @@ returns boolean language sql security definer as $$
     where id = auth.uid() and is_admin = true
   );
 $$;
-
--- Auto-create profile on sign-up
-create or replace function handle_new_user()
-returns trigger language plpgsql security definer as $$
-begin
-  insert into profiles (id, display_name, avatar_url)
-  values (
-    new.id,
-    coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
-    new.raw_user_meta_data->>'avatar_url'
-  );
-  return new;
-end;
-$$;
-
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute function handle_new_user();
 
 -- ─────────────────────────────────────────────
 -- ISSUE CATEGORIES  (lookup table)
@@ -128,24 +107,6 @@ create table if not exists issue_support (
 
 create index if not exists issue_support_issue_idx on issue_support(issue_id);
 
--- Keep vote_count in sync
-create or replace function update_vote_count()
-returns trigger language plpgsql as $$
-begin
-  if TG_OP = 'INSERT' then
-    update issues set vote_count = vote_count + 1 where id = NEW.issue_id;
-  elsif TG_OP = 'DELETE' then
-    update issues set vote_count = greatest(0, vote_count - 1) where id = OLD.issue_id;
-  end if;
-  return null;
-end;
-$$;
-
-drop trigger if exists trg_vote_count on issue_support;
-create trigger trg_vote_count
-  after insert or delete on issue_support
-  for each row execute function update_vote_count();
-
 -- ─────────────────────────────────────────────
 -- INSTITUTIONS
 -- ─────────────────────────────────────────────
@@ -191,23 +152,6 @@ create table if not exists status_history (
   created_at  timestamptz not null default now()
 );
 
--- Auto-record status changes on issues
-create or replace function record_status_change()
-returns trigger language plpgsql as $$
-begin
-  if OLD.status is distinct from NEW.status then
-    insert into status_history (issue_id, old_status, new_status, changed_by)
-    values (NEW.id, OLD.status, NEW.status, auth.uid());
-  end if;
-  return NEW;
-end;
-$$;
-
-drop trigger if exists trg_status_history on issues;
-create trigger trg_status_history
-  after update on issues
-  for each row execute function record_status_change();
-
 -- ─────────────────────────────────────────────
 -- PROPOSALS
 -- ─────────────────────────────────────────────
@@ -240,23 +184,6 @@ create table if not exists proposal_votes (
   constraint uq_prop_vote_user    unique (proposal_id, user_id),
   constraint uq_prop_vote_session unique (proposal_id, session_id)
 );
-
-create or replace function update_proposal_vote_count()
-returns trigger language plpgsql as $$
-begin
-  if TG_OP = 'INSERT' then
-    update proposals set vote_count = vote_count + 1 where id = NEW.proposal_id;
-  elsif TG_OP = 'DELETE' then
-    update proposals set vote_count = greatest(0, vote_count - 1) where id = OLD.proposal_id;
-  end if;
-  return null;
-end;
-$$;
-
-drop trigger if exists trg_proposal_vote_count on proposal_votes;
-create trigger trg_proposal_vote_count
-  after insert or delete on proposal_votes
-  for each row execute function update_proposal_vote_count();
 
 -- ─────────────────────────────────────────────
 -- INSTITUTIONAL RECORDS  (accountability tracker)
@@ -310,7 +237,63 @@ create table if not exists data_sources (
 );
 
 -- ─────────────────────────────────────────────
--- updated_at trigger (shared)
+-- TRIGGERS: vote counts
+-- ─────────────────────────────────────────────
+create or replace function update_vote_count()
+returns trigger language plpgsql as $$
+begin
+  if TG_OP = 'INSERT' then
+    update issues set vote_count = vote_count + 1 where id = NEW.issue_id;
+  elsif TG_OP = 'DELETE' then
+    update issues set vote_count = greatest(0, vote_count - 1) where id = OLD.issue_id;
+  end if;
+  return null;
+end;
+$$;
+
+drop trigger if exists trg_vote_count on issue_support;
+create trigger trg_vote_count
+  after insert or delete on issue_support
+  for each row execute function update_vote_count();
+
+create or replace function update_proposal_vote_count()
+returns trigger language plpgsql as $$
+begin
+  if TG_OP = 'INSERT' then
+    update proposals set vote_count = vote_count + 1 where id = NEW.proposal_id;
+  elsif TG_OP = 'DELETE' then
+    update proposals set vote_count = greatest(0, vote_count - 1) where id = OLD.proposal_id;
+  end if;
+  return null;
+end;
+$$;
+
+drop trigger if exists trg_proposal_vote_count on proposal_votes;
+create trigger trg_proposal_vote_count
+  after insert or delete on proposal_votes
+  for each row execute function update_proposal_vote_count();
+
+-- ─────────────────────────────────────────────
+-- TRIGGER: status history
+-- ─────────────────────────────────────────────
+create or replace function record_status_change()
+returns trigger language plpgsql as $$
+begin
+  if OLD.status is distinct from NEW.status then
+    insert into status_history (issue_id, old_status, new_status, changed_by)
+    values (NEW.id, OLD.status, NEW.status, auth.uid());
+  end if;
+  return NEW;
+end;
+$$;
+
+drop trigger if exists trg_status_history on issues;
+create trigger trg_status_history
+  after update on issues
+  for each row execute function record_status_change();
+
+-- ─────────────────────────────────────────────
+-- TRIGGER: updated_at (shared)
 -- ─────────────────────────────────────────────
 create or replace function set_updated_at()
 returns trigger language plpgsql as $$
@@ -406,3 +389,26 @@ create policy "ds: admin only"                on data_sources for all using (is_
 -- ─────────────────────────────────────────────
 alter publication supabase_realtime add table issues;
 alter publication supabase_realtime add table issue_support;
+
+-- ─────────────────────────────────────────────
+-- AUTO-CREATE PROFILE ON SIGN-UP
+-- This must come last — DDL on auth.users can halt
+-- execution in the SQL editor if permissions differ.
+-- ─────────────────────────────────────────────
+create or replace function handle_new_user()
+returns trigger language plpgsql security definer as $$
+begin
+  insert into profiles (id, display_name, avatar_url)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
+    new.raw_user_meta_data->>'avatar_url'
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function handle_new_user();
