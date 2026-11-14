@@ -6,19 +6,10 @@ create extension if not exists "postgis";
 create extension if not exists "uuid-ossp";
 
 -- ─────────────────────────────────────────────
--- HELPER: check if the current user is an admin
--- ─────────────────────────────────────────────
-create or replace function is_admin()
-returns boolean language sql security definer as $$
-  select exists (
-    select 1 from profiles
-    where id = auth.uid() and is_admin = true
-  );
-$$;
-
--- ─────────────────────────────────────────────
 -- PROFILES  (extends auth.users)
 -- ─────────────────────────────────────────────
+-- NOTE: is_admin() is defined AFTER profiles below (SQL functions
+-- validate the referenced table at creation time in PostgreSQL).
 create table if not exists profiles (
   id           uuid primary key references auth.users(id) on delete cascade,
   display_name text,
@@ -28,6 +19,18 @@ create table if not exists profiles (
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );
+
+-- ─────────────────────────────────────────────
+-- HELPER: check if the current user is an admin
+-- (must come after profiles table is created)
+-- ─────────────────────────────────────────────
+create or replace function is_admin()
+returns boolean language sql security definer as $$
+  select exists (
+    select 1 from profiles
+    where id = auth.uid() and is_admin = true
+  );
+$$;
 
 -- Auto-create profile on sign-up
 create or replace function handle_new_user()
