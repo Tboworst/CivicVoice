@@ -12,6 +12,7 @@ import { IssueCard } from "@/components/shared/IssueCard";
 import { PriorityChart } from "@/components/charts/PriorityChart";
 import { CategoryPieChart } from "@/components/charts/CategoryPieChart";
 import { ActivityChart } from "@/components/charts/ActivityChart";
+import { AIPrioritySection } from "@/components/shared/AIPrioritySection";
 import {
   DEMO_CATEGORY_STATS,
   DEMO_ISSUES,
@@ -182,6 +183,9 @@ export default function PrioritiesPage() {
           })}
         </div>
       </div>
+
+      {/* AI Priority Analysis */}
+      <AIPrioritySection />
 
       {/* Top Issues */}
       <div>

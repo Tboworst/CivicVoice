@@ -9,6 +9,8 @@ import {
   Info,
   Tag,
   Loader2,
+  Bot,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,12 +23,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CategoryBadge } from "@/components/shared/CategoryBadge";
+import { AICategorizationCard } from "@/components/shared/AICategorizationCard";
 import { MapWrapper } from "@/components/map/MapWrapper";
 import { CATEGORY_LABELS } from "@/types";
 import type { IssueCategory } from "@/types";
 import { cn } from "@/lib/utils";
 import { submitIssue } from "@/app/actions/issues";
+import { categorizeIssue } from "@/app/actions/ai";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
+import type { IssueCategorization } from "@/app/actions/ai";
 
 const categories = Object.entries(CATEGORY_LABELS) as [IssueCategory, string][];
 
@@ -53,6 +58,13 @@ export default function SubmitPage() {
     tags: "",
   });
 
+  // AI categorization state
+  const [categorizing, setCategorizing] = useState(false);
+  const [categorization, setCategorization] = useState<IssueCategorization | null>(null);
+  const [catError, setCatError] = useState<string | null>(null);
+  const [catErrorCode, setCatErrorCode] = useState<string | undefined>();
+  const [catVisible, setCatVisible] = useState(false);
+
   const updateField = (field: keyof FormData, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
@@ -62,7 +74,30 @@ export default function SubmitPage() {
     form.description.trim().length >= 20 &&
     form.category !== "";
 
-  const canProceedToReview = canProceedToLocation && form.locationName.trim().length > 0;
+  const canProceedToReview =
+    canProceedToLocation && form.locationName.trim().length > 0;
+
+  const runAICategorizaton = async () => {
+    if (form.title.trim().length < 10 || form.description.trim().length < 20) return;
+    setCategorizing(true);
+    setCatError(null);
+    setCatVisible(true);
+    const res = await categorizeIssue(form.title, form.description);
+    setCategorizing(false);
+    if (res.success && res.data) {
+      setCategorization(res.data);
+    } else {
+      setCatError(res.error ?? "Analysis failed.");
+      setCatErrorCode(res.errorCode);
+    }
+  };
+
+  const applyAISuggestion = (category: string, tags: string[]) => {
+    if (category) updateField("category", category);
+    if (tags.length > 0 && !form.tags.trim()) {
+      updateField("tags", tags.join(", "));
+    }
+  };
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -74,7 +109,6 @@ export default function SubmitPage() {
         description: form.description,
         category: form.category,
         locationName: form.locationName,
-        // Default to Towson University center for now — click-to-pin in Phase 3
         locationLat: 39.3959,
         locationLng: -76.6025,
         tags: form.tags
@@ -105,19 +139,25 @@ export default function SubmitPage() {
           <div className="w-20 h-20 rounded-full bg-civic-lime/15 border border-civic-lime/30 flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="w-10 h-10 text-civic-lime" />
           </div>
-          <h1 className="text-2xl font-bold text-civic-text mb-3">
-            Issue Submitted
-          </h1>
+          <h1 className="text-2xl font-bold text-civic-text mb-3">Issue Submitted</h1>
           <p className="text-civic-text-muted mb-2">
             Thank you for raising{" "}
             <span className="text-civic-cyan font-medium">&ldquo;{form.title}&rdquo;</span>.
           </p>
           <p className="text-sm text-civic-text-muted mb-8">
-            Your issue will be reviewed and made visible on the community map
-            shortly. The community can then vote to surface it as a priority.
+            Your issue will be reviewed and made visible on the community map shortly.
+            The community can then vote to surface it as a priority.
           </p>
           <div className="flex flex-col gap-3">
-            <Button onClick={() => { setSubmitted(false); setStep("details"); setForm({ title: "", description: "", category: "", locationName: "", tags: "" }); }}>
+            <Button
+              onClick={() => {
+                setSubmitted(false);
+                setStep("details");
+                setForm({ title: "", description: "", category: "", locationName: "", tags: "" });
+                setCategorization(null);
+                setCatVisible(false);
+              }}
+            >
               Submit Another Issue
             </Button>
             <Button variant="secondary" asChild>
@@ -142,8 +182,8 @@ export default function SubmitPage() {
           Submit a Community Issue
         </h1>
         <p className="text-civic-text-muted">
-          Help your community by documenting an issue affecting Towson. Be
-          specific — detailed submissions get more community support.
+          Help your community by documenting an issue affecting Towson. Be specific —
+          detailed submissions get more community support.
         </p>
       </div>
 
@@ -191,7 +231,7 @@ export default function SubmitPage() {
       </div>
 
       <div className="glass rounded-2xl p-6 border border-white/7">
-        {/* Step 1: Details */}
+        {/* ── Step 1: Details ── */}
         {step === "details" && (
           <div className="space-y-5 animate-fade-in">
             <div>
@@ -205,9 +245,7 @@ export default function SubmitPage() {
                 maxLength={120}
               />
               <div className="flex items-center justify-between mt-1">
-                <p className="text-xs text-civic-text-muted">
-                  Minimum 10 characters
-                </p>
+                <p className="text-xs text-civic-text-muted">Minimum 10 characters</p>
                 <p
                   className={cn(
                     "text-xs",
@@ -263,9 +301,7 @@ export default function SubmitPage() {
                 <p
                   className={cn(
                     "text-xs",
-                    form.description.length < 20
-                      ? "text-civic-text-muted"
-                      : "text-civic-lime"
+                    form.description.length < 20 ? "text-civic-text-muted" : "text-civic-lime"
                   )}
                 >
                   {form.description.length}/2000
@@ -290,15 +326,40 @@ export default function SubmitPage() {
               </p>
             </div>
 
+            {/* AI categorization */}
+            {(form.title.trim().length >= 10 && form.description.trim().length >= 20) && (
+              <div className="space-y-3">
+                {!catVisible && (
+                  <button
+                    type="button"
+                    onClick={runAICategorizaton}
+                    className="flex items-center gap-2 text-xs text-purple-400 hover:text-purple-300 transition-colors py-1"
+                  >
+                    <Bot className="w-3.5 h-3.5" />
+                    <Sparkles className="w-3 h-3" />
+                    Get AI Suggestions
+                  </button>
+                )}
+                {catVisible && (
+                  <AICategorizationCard
+                    loading={categorizing}
+                    analysis={categorization}
+                    error={catError}
+                    errorCode={catErrorCode}
+                    onApply={applyAISuggestion}
+                    onDismiss={() => setCatVisible(false)}
+                    onRetry={runAICategorizaton}
+                  />
+                )}
+              </div>
+            )}
+
             <div className="flex items-start gap-3 glass rounded-lg p-3">
               <Upload className="w-4 h-4 text-civic-text-muted flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-medium text-civic-text">
-                  Photo Upload (Phase 2)
-                </p>
+                <p className="text-sm font-medium text-civic-text">Photo Upload (Phase 2)</p>
                 <p className="text-xs text-civic-text-muted">
-                  Image uploads will be available when database integration is
-                  complete.
+                  Image uploads will be available when database integration is complete.
                 </p>
               </div>
             </div>
@@ -315,7 +376,7 @@ export default function SubmitPage() {
           </div>
         )}
 
-        {/* Step 2: Location */}
+        {/* ── Step 2: Location ── */}
         {step === "location" && (
           <div className="space-y-5 animate-fade-in">
             <div>
@@ -338,12 +399,10 @@ export default function SubmitPage() {
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-sm font-medium text-civic-text">
-                  Map Location
-                </label>
+                <label className="text-sm font-medium text-civic-text">Map Location</label>
                 <span className="flex items-center gap-1 text-xs text-civic-text-muted">
                   <Info className="w-3 h-3" />
-                  Click-to-pin in Phase 3
+                  Click-to-pin coming soon
                 </span>
               </div>
               <div className="rounded-xl overflow-hidden border border-white/10 h-64">
@@ -354,18 +413,13 @@ export default function SubmitPage() {
                   interactive={true}
                 />
               </div>
-              <p className="text-xs text-civic-text-muted mt-2">
-                Interactive pin placement will be enabled when map integration is
-                finalized in Phase 3.
-              </p>
             </div>
 
             <div className="flex items-start gap-3 glass rounded-lg p-3 border border-amber-400/15">
               <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
               <p className="text-xs text-amber-400/80">
-                Your general location will be shown on the public map. Avoid
-                including your home address. Approximate intersections or
-                landmarks are ideal.
+                Your general location will be shown on the public map. Avoid including your home
+                address. Approximate intersections or landmarks are ideal.
               </p>
             </div>
 
@@ -384,7 +438,7 @@ export default function SubmitPage() {
           </div>
         )}
 
-        {/* Step 3: Review */}
+        {/* ── Step 3: Review ── */}
         {step === "review" && (
           <div className="space-y-5 animate-fade-in">
             <div className="rounded-xl bg-civic-elevated border border-white/8 p-4 space-y-3">
@@ -394,9 +448,7 @@ export default function SubmitPage() {
 
               <div>
                 <p className="text-xs text-civic-text-muted">Title</p>
-                <p className="text-sm font-semibold text-civic-text mt-0.5">
-                  {form.title}
-                </p>
+                <p className="text-sm font-semibold text-civic-text mt-0.5">{form.title}</p>
               </div>
 
               {form.category && (
@@ -408,9 +460,7 @@ export default function SubmitPage() {
 
               <div>
                 <p className="text-xs text-civic-text-muted">Description</p>
-                <p className="text-sm text-civic-text mt-0.5 leading-relaxed">
-                  {form.description}
-                </p>
+                <p className="text-sm text-civic-text mt-0.5 leading-relaxed">{form.description}</p>
               </div>
 
               <div>
@@ -438,14 +488,28 @@ export default function SubmitPage() {
                   </div>
                 </div>
               )}
+
+              {/* AI analysis summary */}
+              {categorization && (
+                <div className="pt-2 border-t border-white/8">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <Bot className="w-3 h-3 text-purple-400" />
+                    <span className="text-xs text-purple-400 font-medium">AI Summary</span>
+                    <span className="text-xs text-civic-text-muted">
+                      {Math.round(categorization.confidence * 100)}% confidence
+                    </span>
+                  </div>
+                  <p className="text-xs text-civic-text-muted">{categorization.summary}</p>
+                </div>
+              )}
             </div>
 
             <div className="glass rounded-lg p-3 border border-white/8">
               <p className="text-xs text-civic-text-muted leading-relaxed">
-                By submitting, you confirm this issue is real, affects the Towson
-                community, and you have not included false information, personal
-                attacks, or private data about individuals. CivicVoice reserves the
-                right to remove submissions that violate community guidelines.
+                By submitting, you confirm this issue is real, affects the Towson community, and you
+                have not included false information, personal attacks, or private data about
+                individuals. CivicVoice reserves the right to remove submissions that violate
+                community guidelines.
               </p>
             </div>
 
@@ -456,10 +520,18 @@ export default function SubmitPage() {
             )}
 
             <div className="flex justify-between pt-2">
-              <Button variant="secondary" onClick={() => setStep("location")} disabled={submitting}>
+              <Button
+                variant="secondary"
+                onClick={() => setStep("location")}
+                disabled={submitting}
+              >
                 ← Back
               </Button>
-              <Button onClick={handleSubmit} disabled={submitting} className="gap-2 shadow-glow-cyan-sm">
+              <Button
+                onClick={handleSubmit}
+                disabled={submitting}
+                className="gap-2 shadow-glow-cyan-sm"
+              >
                 {submitting ? (
                   <><Loader2 className="w-4 h-4 animate-spin" /> Submitting…</>
                 ) : (

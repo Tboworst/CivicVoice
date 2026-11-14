@@ -17,6 +17,7 @@ import { CategoryBadge } from "@/components/shared/CategoryBadge";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { DemoNotice } from "@/components/shared/DemoNotice";
 import { IssueCard } from "@/components/shared/IssueCard";
+import { RelatedIssuesWidget } from "@/components/shared/RelatedIssuesWidget";
 import { MapWrapper } from "@/components/map/MapWrapper";
 import {
   DEMO_ISSUES,
@@ -218,7 +219,16 @@ export default async function IssueDetailPage({
             </div>
           )}
 
-          {/* Related issues */}
+          {/* AI-detected related issues */}
+          <RelatedIssuesWidget
+            issueId={issue.id}
+            title={issue.title}
+            description={issue.description}
+            location={issue.location.name}
+            category={issue.category}
+          />
+
+          {/* Same-category issues */}
           {relatedIssues.length > 0 && (
             <div>
               <h2 className="text-base font-semibold text-civic-text mb-4">
