@@ -15,6 +15,7 @@ import {
   Radio,
   LogIn,
   QrCode,
+  Building2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UserMenu } from "@/components/auth/UserMenu";
@@ -25,6 +26,7 @@ const navLinks = [
   { href: "/priorities", label: "Priorities", icon: TrendingUp },
   { href: "/proposals", label: "Proposals", icon: Lightbulb },
   { href: "/accountability", label: "Accountability", icon: ShieldCheck },
+  { href: "/institutions", label: "Institutions", icon: Building2 },
 ];
 
 interface NavbarProps {
@@ -99,7 +101,7 @@ export function Navbar({ displayName, isAdmin = false }: NavbarProps) {
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs text-civic-text-muted hover:text-civic-text hover:bg-white/5 transition-all duration-200"
             >
               <QrCode className="w-3.5 h-3.5" />
-              Join
+              Participate
             </Link>
 
             {/* Admin or sign-in */}
@@ -179,7 +181,7 @@ export function Navbar({ displayName, isAdmin = false }: NavbarProps) {
                 className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-civic-text-muted hover:text-civic-text hover:bg-white/5"
               >
                 <QrCode className="w-4 h-4" />
-                Join (mobile voting)
+                Participate (vote on issues)
               </Link>
               {isAdmin && (
                 <Link

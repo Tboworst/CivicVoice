@@ -639,3 +639,110 @@ export async function calculatePriorities(): Promise<AIResult<PriorityAnalysis>>
     },
   };
 }
+
+// ─────────────────────────────────────────────
+// FEATURE 6: CONNECTED ORGANIZATIONS
+// ─────────────────────────────────────────────
+
+export interface ConnectedOrg {
+  name: string;
+  type: "government" | "university" | "nonprofit" | "community";
+  role: string;
+  description: string;
+  website: string;
+  contactEmail?: string;
+}
+
+const FALLBACK_ORGS: Record<string, ConnectedOrg[]> = {
+  infrastructure: [
+    { name: "Baltimore County Department of Public Works", type: "government", role: "Responsible for roads, sidewalks, and public infrastructure maintenance", description: "Oversees construction, maintenance, and improvement of county infrastructure.", website: "https://www.baltimorecountymd.gov/departments/publicworks", contactEmail: "dpw@baltimorecountymd.gov" },
+    { name: "Maryland State Highway Administration", type: "government", role: "Manages state roads and transportation infrastructure", description: "Plans and maintains Maryland's state highway system.", website: "https://roads.maryland.gov" },
+    { name: "Towson University Facilities Management", type: "university", role: "Manages campus infrastructure and coordinates with county on adjacent areas", description: "Oversees all physical facilities and infrastructure on the Towson University campus.", website: "https://www.towson.edu/adminfinance/facilities" },
+  ],
+  safety: [
+    { name: "Baltimore County Police Department", type: "government", role: "Primary law enforcement agency for public safety concerns", description: "Provides police services throughout Baltimore County including Towson.", website: "https://www.baltimorecountymd.gov/departments/police", contactEmail: "police@baltimorecountymd.gov" },
+    { name: "Towson University Campus Police", type: "university", role: "Handles safety incidents on and around the TU campus", description: "Provides law enforcement and security services for Towson University.", website: "https://www.towson.edu/publicsafety" },
+    { name: "Neighbors United for Towson", type: "community", role: "Community safety advocacy and neighborhood watch coordination", description: "Local community organization focused on neighborhood safety and civic engagement.", website: "https://www.baltimorecountymd.gov" },
+  ],
+  environment: [
+    { name: "Baltimore County Office of Sustainability", type: "government", role: "Leads environmental initiatives and sustainability programs", description: "Coordinates county-wide environmental programs and green infrastructure projects.", website: "https://www.baltimorecountymd.gov/departments/environment" },
+    { name: "Towson University Environmental Science Dept.", type: "university", role: "Research, environmental impact assessment, and community education", description: "Conducts environmental research and partners with the community on sustainability.", website: "https://www.towson.edu/cst/departments/environment" },
+    { name: "Chesapeake Bay Foundation", type: "nonprofit", role: "Advocates for and monitors watershed health in the region", description: "Works to protect and restore the Chesapeake Bay and its tributaries.", website: "https://www.cbf.org" },
+  ],
+  transit: [
+    { name: "Maryland Transit Administration (MTA)", type: "government", role: "Operates bus, light rail, and metro services in the region", description: "Plans and operates transit services throughout the Baltimore metropolitan area.", website: "https://www.mta.maryland.gov" },
+    { name: "Baltimore County Office of Transportation", type: "government", role: "Coordinates local transportation planning and bike/pedestrian infrastructure", description: "Plans and improves transportation infrastructure throughout Baltimore County.", website: "https://www.baltimorecountymd.gov/departments/transportation" },
+    { name: "Towson University Parking & Transportation", type: "university", role: "Manages campus transit and coordinates with regional services", description: "Oversees parking, shuttle services, and transportation options for the TU community.", website: "https://www.towson.edu/adminfinance/parking" },
+  ],
+  housing: [
+    { name: "Baltimore County Office of Housing", type: "government", role: "Administers housing assistance and community development programs", description: "Provides affordable housing resources and community development funding.", website: "https://www.baltimorecountymd.gov/departments/permits/housing" },
+    { name: "Towson Community Development Corp.", type: "nonprofit", role: "Advocates for equitable housing and neighborhood revitalization", description: "Works to strengthen the Towson community through housing and economic development.", website: "https://www.baltimorecountymd.gov" },
+    { name: "Maryland Dept. of Housing & Community Dev.", type: "government", role: "State-level housing policy, funding, and programs", description: "Provides financing, housing production, and community development programs statewide.", website: "https://dhcd.maryland.gov" },
+  ],
+  campus: [
+    { name: "Towson University Student Government Assoc.", type: "university", role: "Advocates for student interests and campus quality of life", description: "Elected student body that represents TU students in university governance.", website: "https://www.towson.edu/studentlife/organizations/sga" },
+    { name: "Towson University Administration", type: "university", role: "Decision-making body for campus policies and improvements", description: "University leadership responsible for campus operations and strategic planning.", website: "https://www.towson.edu/about" },
+    { name: "Baltimore County Council", type: "government", role: "Oversees county matters affecting the Towson campus and surrounding area", description: "Elected legislative body governing Baltimore County.", website: "https://www.baltimorecountymd.gov/council" },
+  ],
+  accessibility: [
+    { name: "Baltimore County Office of Disabilities", type: "government", role: "Ensures ADA compliance and coordinates accessibility improvements", description: "Advocates for people with disabilities and coordinates accessibility programs.", website: "https://www.baltimorecountymd.gov/departments/health/disabilities" },
+    { name: "Towson University Accessibility & Disability Services", type: "university", role: "Supports students with disabilities and campus accessibility", description: "Provides accommodations and advocates for accessible campus infrastructure.", website: "https://www.towson.edu/studentlife/accessibility" },
+    { name: "Maryland Disability Rights Coalition", type: "nonprofit", role: "Statewide advocacy for disability rights and accessibility", description: "Advocates for the rights of Marylanders with disabilities.", website: "https://www.mddisability.org" },
+  ],
+  community: [
+    { name: "Greater Towson Council of Community Assoc.", type: "community", role: "Coordinates community groups and advocates for neighborhood interests", description: "Umbrella organization for Towson-area community associations.", website: "https://www.baltimorecountymd.gov" },
+    { name: "Towson University Community Engagement", type: "university", role: "Partners TU resources with community needs and civic projects", description: "Connects the university with the broader Towson community through service and partnerships.", website: "https://www.towson.edu/studentlife/community" },
+    { name: "Baltimore County Recreation & Parks", type: "government", role: "Manages community spaces, parks, and public recreation programs", description: "Operates parks, recreation centers, and community programs throughout the county.", website: "https://www.baltimorecountymd.gov/departments/recreation" },
+  ],
+};
+
+export async function getConnectedOrganizations(
+  category: string,
+  title: string,
+  description: string,
+  locationName: string
+): Promise<AIResult<ConnectedOrg[]>> {
+  // Always include fallback orgs for the category
+  const fallback = FALLBACK_ORGS[category] ?? FALLBACK_ORGS.community;
+
+  if (!hasOpenRouterConfig()) {
+    return { success: true, data: fallback };
+  }
+
+  const prompt = `You are a civic resource expert for Towson, MD (Baltimore County).
+
+For this community issue, identify 3-4 specific real organizations that are most directly relevant:
+Title: "${title}"
+Category: ${category}
+Location: ${locationName}
+Description: "${description.slice(0, 300)}"
+
+Return a JSON array of objects. Each object must have exactly these fields:
+- name: string (official organization name)
+- type: "government" | "university" | "nonprofit" | "community"
+- role: string (1 sentence: their specific role for THIS issue)
+- description: string (1 sentence about the organization)
+- website: string (real, working URL)
+- contactEmail: string (optional, only if you know it)
+
+Only include real Towson/Baltimore County organizations. Return JSON array only, no markdown.`;
+
+  try {
+    const raw = await callOpenRouter(
+      [{ role: "user", content: prompt }],
+      { maxTokens: 600, temperature: 0.3 }
+    );
+    const parsed = parseJsonSafely<ConnectedOrg[]>(raw);
+    if (!parsed || !Array.isArray(parsed) || parsed.length === 0) {
+      return { success: true, data: fallback };
+    }
+    // Validate structure
+    const valid = parsed.filter(
+      (o) => typeof o.name === "string" && typeof o.website === "string" && typeof o.role === "string"
+    );
+    return { success: true, data: valid.length > 0 ? valid : fallback };
+  } catch (err) {
+    // Silently fall back — orgs are still shown from static list
+    return { success: true, data: fallback, ...wrapError(err) };
+  }
+}

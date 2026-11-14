@@ -1,3 +1,5 @@
+export const revalidate = 300;
+
 import {
   Layers,
   TrendingUp,
@@ -21,82 +23,84 @@ import {
   DEMO_ISSUES,
   DEMO_PROPOSALS,
   DEMO_INSTITUTIONAL_RESPONSES,
-  DEMO_PLATFORM_STATS,
-  DEMO_CATEGORY_STATS,
   DEMO_ACTIVITY_DATA,
+  DEMO_CATEGORY_STATS,
 } from "@/lib/demo-data";
+import { getDashboardStats, getAreaStats } from "@/app/actions/geography";
 import { formatRelativeDate } from "@/lib/utils";
 import Link from "next/link";
 
-const recentIssues = [...DEMO_ISSUES]
-  .sort(
-    (a, b) =>
-      new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
-  )
-  .slice(0, 5);
+export default async function AdminDashboard() {
+  const [stats, areaStats] = await Promise.all([
+    getDashboardStats(),
+    getAreaStats(),
+  ]);
 
-export default function AdminDashboard() {
+  const recentIssues = [...DEMO_ISSUES]
+    .sort(
+      (a, b) =>
+        new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
+    )
+    .slice(0, 5);
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-civic-text">
-            Admin Overview
-          </h1>
+          <h1 className="text-xl font-bold text-civic-text">Admin Overview</h1>
           <p className="text-sm text-civic-text-muted">
-            CivicVoice · Towson, MD · Data as of {DEMO_PLATFORM_STATS.dataAsOf}
+            CivicVoice · Towson, MD
+            {stats.fromDB && (
+              <span className="ml-2 text-civic-cyan/70">· Live data</span>
+            )}
           </p>
         </div>
-        <DemoNotice inline />
+        {!stats.fromDB && <DemoNotice inline />}
       </div>
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
         <StatCard
           label="Total Issues"
-          value={DEMO_PLATFORM_STATS.totalIssues}
+          value={stats.totalIssues}
           icon={Layers}
-          trend={{ value: 23, label: "this month" }}
           iconColor="#00d4ff"
         />
         <StatCard
           label="Community Votes"
-          value={DEMO_PLATFORM_STATS.totalVotes.toLocaleString()}
+          value={stats.totalVotes.toLocaleString()}
           icon={TrendingUp}
-          trend={{ value: 18, label: "this week" }}
           iconColor="#3b82f6"
         />
         <StatCard
           label="Active Proposals"
-          value={DEMO_PLATFORM_STATS.activeProposals}
+          value={stats.activeProposals}
           icon={Lightbulb}
           iconColor="#84cc16"
         />
         <StatCard
           label="Resolved Issues"
-          value={DEMO_PLATFORM_STATS.resolvedIssues}
+          value={stats.resolvedIssues}
           icon={CheckCircle}
           iconColor="#84cc16"
         />
         <StatCard
           label="Engaged Residents"
-          value={DEMO_PLATFORM_STATS.participatingResidents}
+          value={stats.fromDB ? "—" : "1,247"}
           icon={Users}
-          trend={{ value: 12, label: "this month" }}
           iconColor="#a855f7"
         />
         <StatCard
           label="Institutional Responses"
-          value={DEMO_PLATFORM_STATS.institutionalResponses}
+          value={stats.institutionalResponses}
           icon={ShieldCheck}
           iconColor="#f59e0b"
         />
       </div>
 
-      {/* Charts row */}
+      {/* Charts row — always uses demo chart data for visualization */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Activity chart */}
         <div className="lg:col-span-2 glass rounded-2xl p-5 border border-white/7">
           <h2 className="text-sm font-semibold text-civic-text mb-1">
             Platform Activity
@@ -107,7 +111,6 @@ export default function AdminDashboard() {
           <ActivityChart data={DEMO_ACTIVITY_DATA} height={180} />
         </div>
 
-        {/* Category distribution */}
         <div className="glass rounded-2xl p-5 border border-white/7">
           <h2 className="text-sm font-semibold text-civic-text mb-1">
             Issues by Category
@@ -121,7 +124,6 @@ export default function AdminDashboard() {
 
       {/* Priority bar + recent issues */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Priority chart */}
         <div className="glass rounded-2xl p-5 border border-white/7">
           <h2 className="text-sm font-semibold text-civic-text mb-1">
             Priority Rankings
@@ -132,7 +134,6 @@ export default function AdminDashboard() {
           <PriorityChart data={DEMO_CATEGORY_STATS} height={220} />
         </div>
 
-        {/* Recent issues */}
         <div className="glass rounded-2xl p-5 border border-white/7">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-civic-text">
@@ -178,7 +179,6 @@ export default function AdminDashboard() {
 
       {/* Proposals & Accountability */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Proposal status */}
         <div className="glass rounded-2xl p-5 border border-white/7">
           <div className="flex items-center gap-2 mb-4">
             <Lightbulb className="w-4 h-4 text-civic-lime" />
@@ -217,7 +217,6 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Accountability */}
         <div className="glass rounded-2xl p-5 border border-white/7">
           <div className="flex items-center gap-2 mb-4">
             <ShieldCheck className="w-4 h-4 text-civic-lime" />
@@ -227,20 +226,26 @@ export default function AdminDashboard() {
           </div>
           <div className="space-y-3">
             {DEMO_INSTITUTIONAL_RESPONSES.map((response) => {
-              const statusIcons = {
+              const statusIcons: Record<string, typeof AlertCircle> = {
                 acknowledged: AlertCircle,
                 committed: Clock,
                 in_progress: Clock,
                 completed: CheckCircle,
+                pending: AlertCircle,
+                resolved: CheckCircle,
+                dismissed: AlertCircle,
               };
-              const StatusIcon = statusIcons[response.status];
-              const statusColors = {
+              const StatusIcon = statusIcons[response.status] ?? AlertCircle;
+              const statusColors: Record<string, string> = {
                 acknowledged: "#64748b",
                 committed: "#3b82f6",
                 in_progress: "#f59e0b",
                 completed: "#84cc16",
+                pending: "#64748b",
+                resolved: "#84cc16",
+                dismissed: "#ef4444",
               };
-              const color = statusColors[response.status];
+              const color = statusColors[response.status] ?? "#64748b";
 
               return (
                 <div
@@ -262,7 +267,7 @@ export default function AdminDashboard() {
                       {response.issueTitle}
                     </p>
                   </div>
-                  <StatusBadge status={response.status} type="response" />
+                  <StatusBadge status={response.status as "acknowledged"} type="response" />
                 </div>
               );
             })}
@@ -275,40 +280,49 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Geographic heatmap placeholder */}
+      {/* Geographic distribution */}
       <div className="glass rounded-2xl p-5 border border-white/7">
         <div className="flex items-center gap-2 mb-4">
           <MapPin className="w-4 h-4 text-civic-cyan" />
           <h2 className="text-sm font-semibold text-civic-text">
             Geographic Issue Distribution
           </h2>
+          {stats.fromDB && (
+            <span className="text-xs text-civic-cyan/60 ml-auto">Live</span>
+          )}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {[
-            { area: "TU Campus", count: 5, color: "#00d4ff" },
-            { area: "York Rd Corridor", count: 3, color: "#3b82f6" },
-            { area: "Towson Town Center", count: 2, color: "#a855f7" },
-            { area: "West Towson", count: 2, color: "#84cc16" },
-            { area: "North Campus", count: 2, color: "#f59e0b" },
-            { area: "Greater Towson", count: 4, color: "#ef4444" },
-          ].map(({ area, count, color }) => (
-            <div
-              key={area}
-              className="rounded-xl p-3 text-center"
-              style={{
-                backgroundColor: `${color}10`,
-                border: `1px solid ${color}20`,
-              }}
-            >
-              <p className="text-2xl font-bold" style={{ color }}>
-                {count}
-              </p>
-              <p className="text-xs text-civic-text-muted mt-1 leading-tight">
-                {area}
-              </p>
-            </div>
-          ))}
-        </div>
+        {areaStats.length > 0 ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {areaStats.slice(0, 10).map(({ area, count }) => {
+              const intensity = Math.min(count / (areaStats[0]?.count || 1), 1);
+              const color = `hsl(${195 + intensity * 40}, 80%, ${40 + intensity * 25}%)`;
+              return (
+                <div
+                  key={area}
+                  className="rounded-xl p-3 text-center"
+                  style={{
+                    backgroundColor: `${color}12`,
+                    border: `1px solid ${color}22`,
+                  }}
+                >
+                  <p
+                    className="text-2xl font-bold"
+                    style={{ color }}
+                  >
+                    {count}
+                  </p>
+                  <p className="text-xs text-civic-text-muted mt-1 leading-tight">
+                    {area}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm text-civic-text-muted text-center py-4">
+            No geographic data available.
+          </p>
+        )}
       </div>
     </div>
   );

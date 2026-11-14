@@ -10,6 +10,7 @@ import {
   User,
   Lightbulb,
   ExternalLink,
+  Tv2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LiveVoteButton } from "@/components/shared/LiveVoteButton";
@@ -19,16 +20,24 @@ import { DemoNotice } from "@/components/shared/DemoNotice";
 import { IssueCard } from "@/components/shared/IssueCard";
 import { RelatedIssuesWidget } from "@/components/shared/RelatedIssuesWidget";
 import { MapWrapper } from "@/components/map/MapWrapper";
+import { IssueShareQR } from "@/components/shared/IssueShareQR";
+import { ConnectedOrgsWidget } from "@/components/shared/ConnectedOrgsWidget";
 import {
   DEMO_ISSUES,
   DEMO_PROPOSALS,
   DEMO_INSTITUTIONAL_RESPONSES,
 } from "@/lib/demo-data";
+import { getIssueById } from "@/app/actions/issues";
 import { formatDate, formatRelativeDate } from "@/lib/utils";
+import type { Issue, IssueCategory } from "@/types";
 
+// Pre-render demo issue pages at build time; all other IDs render on-demand.
 export function generateStaticParams() {
   return DEMO_ISSUES.map((issue) => ({ id: issue.id }));
 }
+
+export const dynamicParams = true;
+export const revalidate = 120; // re-fetch every 2 minutes
 
 export default async function IssueDetailPage({
   params,
@@ -36,7 +45,35 @@ export default async function IssueDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const issue = DEMO_ISSUES.find((i) => i.id === id);
+
+  // 1. Try demo data first (covers pre-rendered pages instantly)
+  let issue: Issue | null = DEMO_ISSUES.find((i) => i.id === id) ?? null;
+
+  // 2. Fall back to Supabase for DB-originated issues (UUID format)
+  if (!issue) {
+    const { data } = await getIssueById(id);
+    if (data) {
+      issue = {
+        id: data.id,
+        title: data.title,
+        description: data.description,
+        category: data.category as IssueCategory,
+        status: data.status,
+        votes: data.vote_count,
+        submittedAt: data.created_at,
+        location: {
+          name: data.location_name,
+          lat: data.location_lat,
+          lng: data.location_lng,
+          area: data.location_area ?? undefined,
+        },
+        tags: data.tags,
+        commentCount: data.comment_count,
+        reporterType: (data.reporter_type as Issue["reporterType"]) ?? undefined,
+      };
+    }
+  }
+
   if (!issue) notFound();
 
   const relatedIssues = DEMO_ISSUES.filter(
@@ -156,6 +193,17 @@ export default async function IssueDetailPage({
             </div>
           )}
 
+          {/* Issue image */}
+          {issue.imageUrl && (
+            <div className="glass rounded-2xl overflow-hidden border border-white/7">
+              <img
+                src={issue.imageUrl}
+                alt={issue.title}
+                className="w-full max-h-80 object-cover"
+              />
+            </div>
+          )}
+
           {/* Map */}
           <div className="glass rounded-2xl overflow-hidden border border-white/7">
             <div className="p-4 border-b border-white/7">
@@ -219,6 +267,14 @@ export default async function IssueDetailPage({
             </div>
           )}
 
+          {/* Connected organizations */}
+          <ConnectedOrgsWidget
+            category={issue.category}
+            title={issue.title}
+            description={issue.description}
+            locationName={issue.location.name}
+          />
+
           {/* AI-detected related issues */}
           <RelatedIssuesWidget
             issueId={issue.id}
@@ -263,7 +319,20 @@ export default async function IssueDetailPage({
               initialCount={issue.votes}
               className="w-full gap-2 mb-2"
             />
+            <Link href={`/live/${issue.id}`} target="_blank">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-1.5 text-civic-cyan border-civic-cyan/30 hover:bg-civic-cyan/10"
+              >
+                <Tv2 className="w-3.5 h-3.5" />
+                Present Live
+              </Button>
+            </Link>
           </div>
+
+          {/* QR code share widget */}
+          <IssueShareQR issueId={issue.id} />
 
           {/* Institutional response */}
           {institutionalResponse ? (

@@ -18,6 +18,7 @@ export interface SubmitIssueInput {
   locationLat: number;
   locationLng: number;
   tags?: string[];
+  imageUrl?: string;
 }
 
 export interface ActionResult {
@@ -48,6 +49,7 @@ export async function submitIssue(input: SubmitIssueInput): Promise<ActionResult
     location_lat: input.locationLat,
     location_lng: input.locationLng,
     tags: input.tags ?? [],
+    image_url: input.imageUrl ?? null,
     status: "open",
     is_demo: false,
   };

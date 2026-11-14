@@ -9,6 +9,7 @@ import {
   PlusCircle,
   ChevronRight,
   Layers,
+  Flame,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { IssueCard } from "@/components/shared/IssueCard";
@@ -17,6 +18,7 @@ import { DemoNotice } from "@/components/shared/DemoNotice";
 import { CategoryBadge } from "@/components/shared/CategoryBadge";
 import { PriorityChart } from "@/components/charts/PriorityChart";
 import { MapWrapper } from "@/components/map/MapWrapper";
+import { getTrendingIssues } from "@/app/actions/geography";
 import {
   DEMO_ISSUES,
   DEMO_PLATFORM_STATS,
@@ -24,11 +26,10 @@ import {
   DEMO_PROPOSALS,
 } from "@/lib/demo-data";
 
-const topIssues = [...DEMO_ISSUES]
-  .sort((a, b) => b.votes - a.votes)
-  .slice(0, 3);
+export const revalidate = 300; // cache page for 5 minutes
 
-export default function HomePage() {
+export default async function HomePage() {
+  const trendingIssues = await getTrendingIssues(3);
   return (
     <div className="relative">
       {/* ── Hero ─────────────────────────────────────────── */}
@@ -211,13 +212,16 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── Recent Issues ────────────────────────────────── */}
+      {/* ── Trending Issues ───────────────────────────────── */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 pb-16">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-xl font-bold text-civic-text">Top Issues</h2>
-            <p className="text-sm text-civic-text-muted mt-1">
-              Highest-priority concerns from the Towson community
+            <div className="flex items-center gap-2 mb-1">
+              <Flame className="w-5 h-5 text-civic-cyan" />
+              <h2 className="text-xl font-bold text-civic-text">Trending Now</h2>
+            </div>
+            <p className="text-sm text-civic-text-muted">
+              Issues gaining the most community support right now
             </p>
           </div>
           <Link href="/explore">
@@ -228,8 +232,15 @@ export default function HomePage() {
           </Link>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {topIssues.map((issue) => (
-            <IssueCard key={issue.id} issue={issue} />
+          {trendingIssues.map((issue, i) => (
+            <div key={issue.id} className="relative">
+              {i === 0 && (
+                <div className="absolute -top-2 -left-2 z-10 flex items-center gap-1 bg-civic-cyan text-civic-bg text-[10px] font-bold px-2 py-0.5 rounded-full">
+                  <Flame className="w-2.5 h-2.5" /> #1 Trending
+                </div>
+              )}
+              <IssueCard issue={issue} />
+            </div>
           ))}
         </div>
       </section>

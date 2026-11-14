@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   MapPin,
   Upload,
@@ -11,6 +11,8 @@ import {
   Loader2,
   Bot,
   Sparkles,
+  X,
+  ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +33,7 @@ import { cn } from "@/lib/utils";
 import { submitIssue } from "@/app/actions/issues";
 import { categorizeIssue } from "@/app/actions/ai";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
+import { createClient } from "@/lib/supabase/client";
 import type { IssueCategorization } from "@/app/actions/ai";
 
 const categories = Object.entries(CATEGORY_LABELS) as [IssueCategory, string][];
@@ -57,6 +60,30 @@ export default function SubmitPage() {
     locationName: "",
     tags: "",
   });
+
+  // Image upload state
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return;
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Image must be under 10 MB.");
+      return;
+    }
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const removeImage = () => {
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImageFile(null);
+    setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   // AI categorization state
   const [categorizing, setCategorizing] = useState(false);
@@ -104,6 +131,28 @@ export default function SubmitPage() {
     setSubmitError(null);
 
     if (hasSupabaseConfig()) {
+      // Upload image to Supabase Storage if one was selected
+      let imageUrl: string | undefined;
+      if (imageFile) {
+        try {
+          const supabase = createClient();
+          const ext = imageFile.name.split(".").pop() ?? "jpg";
+          const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+          const { data, error: uploadErr } = await supabase.storage
+            .from("issue-images")
+            .upload(path, imageFile, { cacheControl: "3600", upsert: false });
+          if (!uploadErr && data) {
+            const { data: urlData } = supabase.storage
+              .from("issue-images")
+              .getPublicUrl(data.path);
+            imageUrl = urlData.publicUrl;
+          }
+          // If upload fails (bucket not created yet), continue without image
+        } catch {
+          // Storage not available — submit without image
+        }
+      }
+
       const result = await submitIssue({
         title: form.title,
         description: form.description,
@@ -114,6 +163,7 @@ export default function SubmitPage() {
         tags: form.tags
           ? form.tags.split(",").map((t) => t.trim()).filter(Boolean)
           : [],
+        imageUrl,
       });
       if (!result.success) {
         setSubmitError(result.error ?? "Submission failed. Please try again.");
@@ -354,14 +404,52 @@ export default function SubmitPage() {
               </div>
             )}
 
-            <div className="flex items-start gap-3 glass rounded-lg p-3">
-              <Upload className="w-4 h-4 text-civic-text-muted flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-civic-text">Photo Upload (Phase 2)</p>
-                <p className="text-xs text-civic-text-muted">
-                  Image uploads will be available when database integration is complete.
-                </p>
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-civic-text mb-1.5">
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  Photo (optional)
+                </div>
+              </label>
+
+              {imagePreview ? (
+                <div className="relative rounded-xl overflow-hidden border border-white/10">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={imagePreview}
+                    alt="Preview"
+                    className="w-full max-h-56 object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={removeImage}
+                    className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full border border-dashed border-white/15 hover:border-white/25 rounded-xl p-6 flex flex-col items-center gap-2 text-civic-text-muted hover:text-civic-text transition-colors"
+                >
+                  <Upload className="w-6 h-6" />
+                  <span className="text-sm">Click to upload a photo</span>
+                  <span className="text-xs">JPG, PNG, WEBP · max 10 MB</span>
+                </button>
+              )}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <p className="text-xs text-civic-text-muted mt-1.5">
+                A photo helps the community and institutions understand the issue.
+              </p>
             </div>
 
             <div className="flex justify-end pt-2">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
@@ -13,6 +13,7 @@ import {
   TrendingUp,
   MessageSquare,
   ArrowRight,
+  Loader2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import { MapSkeleton } from "@/components/map/MapSkeleton";
 import { DEMO_ISSUES } from "@/lib/demo-data";
 import { CATEGORY_LABELS } from "@/types";
 import { formatRelativeDate } from "@/lib/utils";
+import { getIssuesForMap } from "@/app/actions/geography";
 import type { Issue, IssueStatus } from "@/types";
 
 const CivicMap = dynamic(() => import("@/components/map/CivicMap"), {
@@ -57,9 +59,20 @@ export default function ExplorePage() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
+  const [issues, setIssues] = useState<Issue[]>(DEMO_ISSUES);
+  const [fromDB, setFromDB] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getIssuesForMap().then(({ issues: loaded, fromDB: live }) => {
+      setIssues(loaded);
+      setFromDB(live);
+      setLoading(false);
+    });
+  }, []);
 
   const filtered = useMemo(() => {
-    return DEMO_ISSUES.filter((issue) => {
+    return issues.filter((issue) => {
       const matchSearch =
         !search ||
         issue.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -71,7 +84,7 @@ export default function ExplorePage() {
         statusFilter === "all" || issue.status === statusFilter;
       return matchSearch && matchCategory && matchStatus;
     });
-  }, [search, categoryFilter, statusFilter]);
+  }, [issues, search, categoryFilter, statusFilter]);
 
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col">
@@ -124,9 +137,13 @@ export default function ExplorePage() {
         </Select>
 
         <div className="ml-auto flex items-center gap-1">
-          <span className="text-xs text-civic-text-muted mr-2">
-            {filtered.length} issue{filtered.length !== 1 ? "s" : ""}
-          </span>
+          {loading ? (
+            <Loader2 className="w-3.5 h-3.5 text-civic-text-muted animate-spin mr-2" />
+          ) : (
+            <span className="text-xs text-civic-text-muted mr-2">
+              {filtered.length} issue{filtered.length !== 1 ? "s" : ""}
+            </span>
+          )}
           <div className="flex border border-white/10 rounded-lg overflow-hidden">
             <button
               onClick={() => setView("map")}
@@ -159,7 +176,11 @@ export default function ExplorePage() {
         {view === "map" ? (
           <div className="h-full flex">
             {/* Map */}
-            <div className={`relative transition-all duration-300 ${selectedIssue ? "flex-1" : "w-full"}`}>
+            <div
+              className={`relative transition-all duration-300 ${
+                selectedIssue ? "flex-1" : "w-full"
+              }`}
+            >
               <CivicMap
                 issues={filtered}
                 center={[-76.6025, 39.3959]}
@@ -172,14 +193,22 @@ export default function ExplorePage() {
 
               {/* Issue count badge */}
               <div className="absolute top-4 left-4 glass rounded-lg px-3 py-2 border border-white/10 text-xs">
-                <span className="text-civic-cyan font-semibold">{filtered.length}</span>
+                <span className="text-civic-cyan font-semibold">
+                  {filtered.length}
+                </span>
                 <span className="text-civic-text-muted ml-1">
                   issue{filtered.length !== 1 ? "s" : ""} on map
                 </span>
               </div>
 
               <div className="absolute bottom-4 left-4">
-                <DemoNotice inline />
+                {fromDB ? (
+                  <div className="glass rounded-lg px-3 py-1.5 border border-civic-cyan/15 text-xs text-civic-cyan/70">
+                    Live data
+                  </div>
+                ) : (
+                  <DemoNotice inline />
+                )}
               </div>
             </div>
 
@@ -187,7 +216,9 @@ export default function ExplorePage() {
             {selectedIssue && (
               <div className="w-96 glass border-l border-white/7 overflow-y-auto flex flex-col animate-slide-up">
                 <div className="flex items-center justify-between p-4 border-b border-white/7">
-                  <span className="text-sm font-semibold text-civic-text">Issue Details</span>
+                  <span className="text-sm font-semibold text-civic-text">
+                    Issue Details
+                  </span>
                   <button
                     onClick={() => setSelectedIssue(null)}
                     className="p-1 rounded-lg text-civic-text-muted hover:text-civic-text hover:bg-white/5 transition-colors"
@@ -230,7 +261,9 @@ export default function ExplorePage() {
                       <div className="text-purple-400 font-bold text-xs mt-1 capitalize">
                         {selectedIssue.reporterType ?? "community"}
                       </div>
-                      <p className="text-xs text-civic-text-muted mt-0.5">reporter</p>
+                      <p className="text-xs text-civic-text-muted mt-0.5">
+                        reporter
+                      </p>
                     </div>
                   </div>
 
@@ -283,11 +316,13 @@ export default function ExplorePage() {
           /* List view */
           <div className="h-full overflow-y-auto">
             <div className="max-w-4xl mx-auto px-4 py-6">
-              <DemoNotice className="mb-4" />
+              {!fromDB && <DemoNotice className="mb-4" />}
               {filtered.length === 0 ? (
                 <div className="text-center py-16">
                   <Search className="w-10 h-10 text-civic-text-muted mx-auto mb-3" />
-                  <p className="text-civic-text-muted">No issues match your filters.</p>
+                  <p className="text-civic-text-muted">
+                    No issues match your filters.
+                  </p>
                   <button
                     onClick={() => {
                       setSearch("");

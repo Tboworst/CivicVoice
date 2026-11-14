@@ -2,10 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Radio, TrendingUp, ExternalLink, Check, Loader2 } from "lucide-react";
+import { Radio, TrendingUp, ExternalLink, Check, Loader2, MapPin, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CategoryBadge } from "@/components/shared/CategoryBadge";
-import { StatusBadge } from "@/components/shared/StatusBadge";
 import { voteForIssue } from "@/app/actions/votes";
 import { DEMO_ISSUES } from "@/lib/demo-data";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
@@ -22,10 +21,7 @@ function getSessionId(): string {
   return id;
 }
 
-// Top 5 issues by votes for quick participation
-const TOP_ISSUES = [...DEMO_ISSUES]
-  .sort((a, b) => b.votes - a.votes)
-  .slice(0, 5);
+const TOP_ISSUES = [...DEMO_ISSUES].sort((a, b) => b.votes - a.votes).slice(0, 6);
 
 export default function JoinPage() {
   const [sessionId, setSessionId] = useState("");
@@ -38,7 +34,6 @@ export default function JoinPage() {
   useEffect(() => {
     const sid = getSessionId();
     setSessionId(sid);
-    // Restore from localStorage
     const voted = new Set<string>();
     DEMO_ISSUES.forEach((i) => {
       if (localStorage.getItem(`voted_issue_${i.id}`) === "1") voted.add(i.id);
@@ -52,10 +47,8 @@ export default function JoinPage() {
 
     if (hasSupabaseConfig()) {
       const result = await voteForIssue(issue.id, sessionId);
-      if (result.success) {
-        if (typeof result.newCount === "number") {
-          setCounts((prev) => ({ ...prev, [issue.id]: result.newCount! }));
-        }
+      if (result.success && typeof result.newCount === "number") {
+        setCounts((prev) => ({ ...prev, [issue.id]: result.newCount! }));
       }
     } else {
       setCounts((prev) => ({ ...prev, [issue.id]: prev[issue.id] + 1 }));
@@ -69,35 +62,40 @@ export default function JoinPage() {
   const totalVotes = Object.values(counts).reduce((s, v) => s + v, 0);
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-civic-bg">
       {/* Header */}
       <header className="sticky top-0 z-10 glass border-b border-white/7 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Radio className="w-5 h-5 text-civic-cyan" />
-          <span className="font-bold text-sm">CivicVoice</span>
+          <div className="w-6 h-6 rounded-md bg-civic-cyan/20 border border-civic-cyan/40 flex items-center justify-center">
+            <Radio className="w-3 h-3 text-civic-cyan" />
+          </div>
+          <span className="font-bold text-sm text-civic-text">CivicVoice</span>
         </div>
         <Link
           href="/explore"
-          className="text-xs text-civic-text-muted hover:text-civic-cyan flex items-center gap-1"
+          className="text-xs text-civic-text-muted hover:text-civic-cyan flex items-center gap-1 transition-colors"
         >
           Full site <ExternalLink className="w-3 h-3" />
         </Link>
       </header>
 
       <main className="flex-1 max-w-lg mx-auto w-full px-4 py-8">
-        {/* Hero */}
+
+        {/* What is this */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 bg-civic-cyan/10 border border-civic-cyan/20 text-civic-cyan text-xs font-semibold px-3 py-1.5 rounded-full mb-4">
-            <Radio className="w-3 h-3" />
-            Live Participation
+            <span className="w-1.5 h-1.5 rounded-full bg-civic-cyan animate-pulse" />
+            Live Community Session
           </div>
           <h1 className="text-2xl font-bold text-civic-text mb-2">
-            Vote on Community Issues
+            What matters most to Towson?
           </h1>
-          <p className="text-sm text-civic-text-muted">
-            Support the issues that matter most to Towson. No sign-in required.
+          <p className="text-sm text-civic-text-muted max-w-sm mx-auto leading-relaxed">
+            These are real issues reported by residents, students, and community
+            members. Vote for the ones that matter to you — no sign-in required.
+            Every vote shapes the community priority list.
           </p>
-          <div className="mt-3 inline-flex items-center gap-2 text-sm">
+          <div className="mt-4 inline-flex items-center gap-3 text-sm">
             <span className="text-3xl font-bold text-civic-cyan tabular-nums">
               {totalVotes.toLocaleString()}
             </span>
@@ -105,8 +103,27 @@ export default function JoinPage() {
           </div>
         </div>
 
+        {/* How it works — 3 steps */}
+        <div className="grid grid-cols-3 gap-3 mb-8">
+          {[
+            { step: "1", label: "Read the issue" },
+            { step: "2", label: "Tap to vote" },
+            { step: "3", label: "See it live" },
+          ].map(({ step, label }) => (
+            <div
+              key={step}
+              className="glass rounded-xl p-3 border border-white/7 text-center"
+            >
+              <div className="w-6 h-6 rounded-full bg-civic-cyan/20 text-civic-cyan text-xs font-bold flex items-center justify-center mx-auto mb-1.5">
+                {step}
+              </div>
+              <p className="text-xs text-civic-text-muted">{label}</p>
+            </div>
+          ))}
+        </div>
+
         {/* Issue voting cards */}
-        <div className="space-y-3">
+        <div className="space-y-3 mb-8">
           {TOP_ISSUES.map((issue) => {
             const hasVoted = votedIds.has(issue.id);
             const isLoading = loadingId === issue.id;
@@ -116,20 +133,23 @@ export default function JoinPage() {
               <div
                 key={issue.id}
                 className={`glass rounded-2xl p-4 border transition-colors ${
-                  hasVoted ? "border-civic-cyan/30" : "border-white/7"
+                  hasVoted ? "border-civic-cyan/30 bg-civic-cyan/3" : "border-white/7"
                 }`}
               >
-                <div className="flex gap-2 mb-2 flex-wrap">
+                <div className="flex gap-2 mb-2">
                   <CategoryBadge category={issue.category} />
-                  <StatusBadge status={issue.status} type="issue" />
                 </div>
-                <h3 className="text-sm font-semibold text-civic-text leading-snug mb-3">
+                <h3 className="text-sm font-semibold text-civic-text leading-snug mb-1">
                   {issue.title}
                 </h3>
+                <p className="text-xs text-civic-text-muted leading-relaxed mb-3 line-clamp-2">
+                  {issue.description}
+                </p>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs text-civic-text-muted">
+                  <div className="flex items-center gap-1 text-xs text-civic-text-muted">
+                    <MapPin className="w-3 h-3" />
                     {issue.location.name}
-                  </span>
+                  </div>
                   <button
                     onClick={() => handleVote(issue)}
                     disabled={hasVoted || !!loadingId}
@@ -155,23 +175,26 @@ export default function JoinPage() {
         </div>
 
         {/* CTA */}
-        <div className="mt-8 glass rounded-2xl p-5 text-center border border-white/7">
-          <p className="text-sm text-civic-text-muted mb-3">
-            See all {DEMO_ISSUES.length} community issues and explore the full platform
+        <div className="glass rounded-2xl p-5 border border-white/7 text-center space-y-3">
+          <p className="text-sm font-medium text-civic-text">
+            See something not on this list?
           </p>
-          <Button asChild className="w-full">
-            <Link href="/explore">
-              <ExternalLink className="w-4 h-4" />
-              Explore All Issues
-            </Link>
-          </Button>
-          <div className="mt-3 flex justify-center gap-4 text-xs text-civic-text-muted">
-            <Link href="/submit" className="hover:text-civic-cyan transition-colors">
-              Report an issue
-            </Link>
-            <Link href="/proposals" className="hover:text-civic-cyan transition-colors">
-              View proposals
-            </Link>
+          <p className="text-xs text-civic-text-muted">
+            Browse all {DEMO_ISSUES.length} reported issues or submit one of your own.
+          </p>
+          <div className="flex gap-2">
+            <Button asChild variant="outline" className="flex-1 text-xs">
+              <Link href="/explore">
+                <QrCode className="w-3.5 h-3.5" />
+                Browse Issues
+              </Link>
+            </Button>
+            <Button asChild className="flex-1 text-xs">
+              <Link href="/submit">
+                <ExternalLink className="w-3.5 h-3.5" />
+                Report Issue
+              </Link>
+            </Button>
           </div>
         </div>
       </main>

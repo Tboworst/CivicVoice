@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import type maplibregl from "maplibre-gl";
 import { cn } from "@/lib/utils";
 import { CATEGORY_COLORS, CATEGORY_LABELS } from "@/types";
 import type { Issue } from "@/types";
+import type maplibregl from "maplibre-gl";
 
 interface CivicMapProps {
   issues?: Issue[];
@@ -59,62 +59,32 @@ function getMaptilerStyle(key: string) {
   return `https://api.maptiler.com/maps/dataviz-dark/style.json?key=${key}`;
 }
 
-function createMarkerElement(issue: Issue, isSelected: boolean): HTMLElement {
-  const color = CATEGORY_COLORS[issue.category] || "#00d4ff";
-  const wrapper = document.createElement("div");
-  wrapper.style.cssText = `
-    position: relative;
-    width: ${isSelected ? "28px" : "22px"};
-    height: ${isSelected ? "28px" : "22px"};
-    cursor: pointer;
-    transition: transform 0.2s ease;
-  `;
-
-  const ring = document.createElement("div");
-  ring.style.cssText = `
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    width: ${isSelected ? "28px" : "22px"};
-    height: ${isSelected ? "28px" : "22px"};
-    border-radius: 50%;
-    background: ${color}22;
-    border: 1.5px solid ${color}55;
-    animation: markerPulse 2.5s ease-out infinite;
-    z-index: 1;
-  `;
-
-  const core = document.createElement("div");
-  core.style.cssText = `
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    width: ${isSelected ? "12px" : "9px"};
-    height: ${isSelected ? "12px" : "9px"};
-    border-radius: 50%;
-    background: ${color};
-    box-shadow: 0 0 ${isSelected ? "14px" : "8px"} ${color}cc, 0 0 ${isSelected ? "28px" : "16px"} ${color}44;
-    z-index: 2;
-    transition: all 0.2s ease;
-  `;
-
-  if (isSelected) {
-    const outerRing = document.createElement("div");
-    outerRing.style.cssText = `
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      width: 44px; height: 44px;
-      border-radius: 50%;
-      border: 1.5px solid ${color}40;
-      z-index: 0;
-    `;
-    wrapper.appendChild(outerRing);
-  }
-
-  wrapper.appendChild(ring);
-  wrapper.appendChild(core);
-  return wrapper;
+function buildGeoJSON(issues: Issue[], selectedId?: string) {
+  return {
+    type: "FeatureCollection" as const,
+    features: issues.map((issue) => ({
+      type: "Feature" as const,
+      geometry: {
+        type: "Point" as const,
+        coordinates: [issue.location.lng, issue.location.lat] as [
+          number,
+          number,
+        ],
+      },
+      properties: {
+        id: issue.id,
+        title: issue.title,
+        category: issue.category,
+        status: issue.status,
+        votes: issue.votes,
+        location: issue.location.name,
+        area: issue.location.area || "",
+        color: CATEGORY_COLORS[issue.category] || "#00d4ff",
+        catLabel: CATEGORY_LABELS[issue.category] || issue.category,
+        selected: issue.id === selectedId,
+      },
+    })),
+  };
 }
 
 export default function CivicMap({
@@ -129,63 +99,204 @@ export default function CivicMap({
 }: CivicMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const markersRef = useRef<
-    Map<string, { marker: maplibregl.Marker; el: HTMLElement }>
-  >(new Map());
+  const issuesRef = useRef<Issue[]>(issues);
+  const onClickRef = useRef(onIssueClick);
+  const popupRef = useRef<maplibregl.Popup | null>(null);
 
-  const addMarkers = useCallback(
-    (
-      gl: typeof maplibregl,
-      map: maplibregl.Map,
-      issueList: Issue[],
-      selectedId: string | undefined,
-      onClick: ((issue: Issue) => void) | undefined
-    ) => {
-      markersRef.current.forEach(({ marker }) => marker.remove());
-      markersRef.current.clear();
+  issuesRef.current = issues;
+  onClickRef.current = onIssueClick;
 
-      issueList.forEach((issue) => {
-        const isSelected = issue.id === selectedId;
-        const el = createMarkerElement(issue, isSelected);
+  const addLayers = useCallback(
+    (gl: typeof maplibregl, map: maplibregl.Map) => {
+      // ── Cluster circles ───────────────────────────────────────────────
+      map.addLayer({
+        id: "clusters",
+        type: "circle",
+        source: "issues",
+        filter: ["has", "point_count"],
+        paint: {
+          "circle-color": "#00d4ff",
+          "circle-radius": [
+            "step",
+            ["get", "point_count"],
+            18,
+            5,
+            23,
+            20,
+            30,
+          ],
+          "circle-opacity": 0.12,
+          "circle-stroke-width": 1,
+          "circle-stroke-color": "#00d4ff",
+          "circle-stroke-opacity": 0.45,
+        },
+      });
 
-        const marker = new gl.Marker({ element: el, anchor: "center" })
-          .setLngLat([issue.location.lng, issue.location.lat])
+      // Cluster count label
+      map.addLayer({
+        id: "cluster-count",
+        type: "symbol",
+        source: "issues",
+        filter: ["has", "point_count"],
+        layout: {
+          "text-field": "{point_count_abbreviated}",
+          "text-size": 11,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          "text-font": ["Noto Sans Regular"] as any,
+        },
+        paint: {
+          "text-color": "#00d4ff",
+        },
+      });
+
+      // ── Individual point layers (glow effect) ─────────────────────────
+      // Outer halo
+      map.addLayer({
+        id: "point-glow-outer",
+        type: "circle",
+        source: "issues",
+        filter: ["!", ["has", "point_count"]],
+        paint: {
+          "circle-radius": 16,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          "circle-color": ["get", "color"] as any,
+          "circle-opacity": 0.07,
+          "circle-blur": 1,
+        },
+      });
+
+      // Inner halo
+      map.addLayer({
+        id: "point-glow-inner",
+        type: "circle",
+        source: "issues",
+        filter: ["!", ["has", "point_count"]],
+        paint: {
+          "circle-radius": 10,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          "circle-color": ["get", "color"] as any,
+          "circle-opacity": 0.16,
+        },
+      });
+
+      // Core dot — larger when selected
+      map.addLayer({
+        id: "point-core",
+        type: "circle",
+        source: "issues",
+        filter: ["!", ["has", "point_count"]],
+        paint: {
+          "circle-radius": [
+            "case",
+            ["==", ["get", "selected"], true],
+            7,
+            5,
+          ],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          "circle-color": ["get", "color"] as any,
+          "circle-stroke-width": ["case", ["==", ["get", "selected"], true], 2, 1],
+          "circle-stroke-color": "rgba(255,255,255,0.35)",
+          "circle-opacity": 1,
+        },
+      });
+
+      // ── Interaction ───────────────────────────────────────────────────
+      // Zoom into cluster on click
+      map.on("click", "clusters", (e) => {
+        const features = map.queryRenderedFeatures(e.point, {
+          layers: ["clusters"],
+        });
+        if (!features[0]) return;
+        const clusterId = features[0].properties?.cluster_id as number;
+        const source = map.getSource("issues") as maplibregl.GeoJSONSource;
+        source
+          .getClusterExpansionZoom(clusterId)
+          .then((zoomLevel) => {
+            if (features[0].geometry.type !== "Point") return;
+            map.easeTo({
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              center: features[0].geometry.coordinates as any,
+              zoom: zoomLevel,
+            });
+          })
+          .catch(() => {});
+      });
+
+      // Use outer glow as click target (16px radius vs 5px core) — much easier to hit
+      map.on("click", "point-glow-outer", (e) => {
+        const id = e.features?.[0]?.properties?.id as string | undefined;
+        if (!id) return;
+        const issue = issuesRef.current.find((i) => i.id === id);
+        if (issue) onClickRef.current?.(issue);
+      });
+
+      // Hover popup for individual points
+      map.on("mouseenter", "point-glow-outer", (e) => {
+        map.getCanvas().style.cursor = "pointer";
+        const props = e.features?.[0]?.properties as
+          | Record<string, string>
+          | undefined;
+        if (!props || !e.lngLat) return;
+
+        if (popupRef.current) popupRef.current.remove();
+
+        popupRef.current = new gl.Popup({
+          closeButton: false,
+          closeOnClick: false,
+          offset: 12,
+          maxWidth: "220px",
+        })
+          .setLngLat(e.lngLat)
+          .setHTML(
+            `<div style="padding:9px 11px;font-family:system-ui,sans-serif;">
+              <div style="font-size:10px;color:${props.color};margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;">${props.catLabel}</div>
+              <div style="font-size:12px;font-weight:600;color:#f1f5f9;line-height:1.4;max-width:190px;">${props.title}</div>
+              <div style="font-size:11px;color:#64748b;margin-top:3px;">${props.votes} votes · ${props.location}</div>
+            </div>`
+          )
           .addTo(map);
+      });
 
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          onClick?.(issue);
-        });
+      map.on("mouseleave", "point-glow-outer", () => {
+        map.getCanvas().style.cursor = "";
+        if (popupRef.current) {
+          popupRef.current.remove();
+          popupRef.current = null;
+        }
+      });
 
-        el.addEventListener("mouseenter", () => {
-          const color = CATEGORY_COLORS[issue.category] || "#00d4ff";
-          const popup = new gl.Popup({
-            closeButton: false,
-            closeOnClick: false,
-            offset: 16,
-            maxWidth: "240px",
-          });
-          popup
-            .setLngLat([issue.location.lng, issue.location.lat])
-            .setHTML(`
-              <div style="padding:10px 12px;font-family:system-ui,sans-serif;">
-                <div style="font-size:11px;color:${color};margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">
-                  ${CATEGORY_LABELS[issue.category]}
-                </div>
-                <div style="font-size:12px;font-weight:600;color:#f1f5f9;line-height:1.4;max-width:200px;">
-                  ${issue.title}
-                </div>
-                <div style="font-size:11px;color:#64748b;margin-top:4px;">
-                  ${issue.votes} votes · ${issue.location.name}
-                </div>
-              </div>
-            `)
-            .addTo(map);
+      // Cluster hover — show issue count
+      map.on("mouseenter", "clusters", (e) => {
+        map.getCanvas().style.cursor = "pointer";
+        const props = e.features?.[0]?.properties as
+          | Record<string, unknown>
+          | undefined;
+        if (!props || !e.lngLat) return;
 
-          el.addEventListener("mouseleave", () => popup.remove(), { once: true });
-        });
+        if (popupRef.current) popupRef.current.remove();
 
-        markersRef.current.set(issue.id, { marker, el });
+        popupRef.current = new gl.Popup({
+          closeButton: false,
+          closeOnClick: false,
+          offset: 12,
+          maxWidth: "160px",
+        })
+          .setLngLat(e.lngLat)
+          .setHTML(
+            `<div style="padding:8px 10px;font-family:system-ui,sans-serif;text-align:center;">
+              <div style="font-size:11px;color:#00d4ff;font-weight:600;">${props.point_count} issues</div>
+              <div style="font-size:10px;color:#64748b;margin-top:2px;">Click to zoom in</div>
+            </div>`
+          )
+          .addTo(map);
+      });
+
+      map.on("mouseleave", "clusters", () => {
+        map.getCanvas().style.cursor = "";
+        if (popupRef.current) {
+          popupRef.current.remove();
+          popupRef.current = null;
+        }
       });
     },
     []
@@ -206,13 +317,21 @@ export default function CivicMap({
         zoom,
         interactive,
         attributionControl: { compact: true },
-        logoPosition: "bottom-left",
       });
 
       mapRef.current = map;
 
       map.on("load", () => {
-        addMarkers(gl, map, issues, selectedIssueId, onIssueClick);
+        map.addSource("issues", {
+          type: "geojson",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          data: buildGeoJSON(issuesRef.current, selectedIssueId) as any,
+          cluster: true,
+          clusterMaxZoom: 14,
+          clusterRadius: 50,
+        });
+
+        addLayers(gl, map);
       });
 
       const container = mapContainerRef.current;
@@ -223,6 +342,7 @@ export default function CivicMap({
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Mount / unmount
   useEffect(() => {
     initMap();
     return () => {
@@ -233,22 +353,16 @@ export default function CivicMap({
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Update selected marker visual state without full reinit
+  // Update GeoJSON source when issues or selection changes
   useEffect(() => {
-    if (!mapRef.current) return;
-    markersRef.current.forEach(({ el }, id) => {
-      const issue = issues.find((i) => i.id === id);
-      if (!issue) return;
-      const color = CATEGORY_COLORS[issue.category] || "#00d4ff";
-      const isSelected = id === selectedIssueId;
-      const core = el.lastElementChild as HTMLElement | null;
-      if (core) {
-        core.style.width = isSelected ? "12px" : "9px";
-        core.style.height = isSelected ? "12px" : "9px";
-        core.style.boxShadow = `0 0 ${isSelected ? "14px" : "8px"} ${color}cc`;
-      }
-    });
-  }, [selectedIssueId, issues]);
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    const source = map.getSource("issues");
+    if (source) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (source as any).setData(buildGeoJSON(issues, selectedIssueId));
+    }
+  }, [issues, selectedIssueId]);
 
   return (
     <div

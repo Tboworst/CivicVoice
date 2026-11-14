@@ -7,10 +7,10 @@
 @layer base {
   :root {
     --radius: 0.75rem;
-    --civic-bg: #05080f;
-    --civic-surface: #0a0e1a;
-    --civic-elevated: #0f1629;
-    --civic-cyan: #00d4ff;
+    --civic-bg: #0d0c00;
+    --civic-surface: #191700;
+    --civic-elevated: #221f00;
+    --civic-cyan: #FFBB00;
     --civic-blue: #3b82f6;
     --civic-lime: #84cc16;
     --civic-border: rgba(255, 255, 255, 0.07);
@@ -42,41 +42,37 @@
     background: var(--civic-bg);
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(0, 212, 255, 0.3);
+    background: rgba(255, 187, 0, 0.3);
     border-radius: 2px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 212, 255, 0.5);
+    background: rgba(255, 187, 0, 0.5);
   }
 }
 
 @layer components {
-  /* Glass panel utility */
+  /* Solid card/panel utility */
   .glass {
-    background: rgba(10, 14, 26, 0.75);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    background: #191700;
     border: 1px solid rgba(255, 255, 255, 0.07);
   }
 
   .glass-elevated {
-    background: rgba(15, 22, 41, 0.85);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    background: #221f00;
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
   /* Glow utilities */
   .glow-cyan {
-    box-shadow: 0 0 20px rgba(0, 212, 255, 0.3), 0 0 40px rgba(0, 212, 255, 0.1);
+    box-shadow: 0 0 20px rgba(255, 187, 0, 0.35), 0 0 40px rgba(255, 187, 0, 0.12);
   }
 
   .glow-cyan-sm {
-    box-shadow: 0 0 10px rgba(0, 212, 255, 0.4);
+    box-shadow: 0 0 10px rgba(255, 187, 0, 0.45);
   }
 
   .text-glow-cyan {
-    text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+    text-shadow: 0 0 20px rgba(255, 187, 0, 0.5);
   }
 
   /* Civic map marker */
@@ -119,8 +115,8 @@
       0deg,
       transparent,
       transparent 2px,
-      rgba(0, 212, 255, 0.015) 2px,
-      rgba(0, 212, 255, 0.015) 4px
+      rgba(255, 187, 0, 0.015) 2px,
+      rgba(255, 187, 0, 0.015) 4px
     );
     pointer-events: none;
     border-radius: inherit;
@@ -160,7 +156,7 @@
 }
 
 .maplibregl-ctrl-attrib a {
-  color: rgba(0, 212, 255, 0.6) !important;
+  color: rgba(255, 187, 0, 0.6) !important;
 }
 
 .maplibregl-ctrl-bottom-right {
@@ -169,12 +165,11 @@
 }
 
 .maplibregl-popup-content {
-  background: rgba(10, 14, 26, 0.95) !important;
-  border: 1px solid rgba(0, 212, 255, 0.2) !important;
+  background: #191700 !important;
+  border: 1px solid rgba(255, 187, 0, 0.2) !important;
   border-radius: 8px !important;
   padding: 0 !important;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 212, 255, 0.1) !important;
-  backdrop-filter: blur(16px) !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6), 0 0 20px rgba(255, 187, 0, 0.1) !important;
 }
 
 .maplibregl-popup-close-button {
@@ -186,12 +181,12 @@
 }
 
 .maplibregl-popup-close-button:hover {
-  color: rgba(0, 212, 255, 0.8) !important;
+  color: rgba(255, 187, 0, 0.8) !important;
   background: transparent !important;
 }
 
 .maplibregl-popup-tip {
-  border-top-color: rgba(0, 212, 255, 0.2) !important;
+  border-top-color: rgba(255, 187, 0, 0.2) !important;
 }
 
 @keyframes markerPulse {
